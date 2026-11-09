@@ -3,7 +3,7 @@
   "apiVersion": "v3.1.0",
   "kind": "DataContract",
   "id": "qa-rr-001",
-  "name": "QA_RR_001",
+  "name": "QA_RR_002",
   "status": "active",
   "tenant": "banking_department",
   "servers": [
