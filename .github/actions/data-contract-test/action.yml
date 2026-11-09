@@ -1,0 +1,128 @@
+name: 'Data Contract — Test'
+description: >
+  Triggers and polls data contract test runs in a CPD/watsonx project
+  using the data-intelligence-sdk and posts a PR comment with the results.
+
+inputs:
+  contract-ids:
+    description: 'Space-separated list of project_id:contract_id pairs to test'
+    required: true
+  url:
+    description: 'CPD / watsonx base URL'
+    required: true
+  environment:
+    description: "Deployment type: 'ibm_cloud' (default), 'aws_cloud', 'gov_cloud' or 'on_prem'"
+    required: false
+    default: 'ibm_cloud'
+  api-key:
+    description: 'API key (IBM Cloud IAM API key for cloud environments; optional for on_prem when username/password is used)'
+    required: false
+    default: ''
+  username:
+    description: 'Username (on_prem only)'
+    required: false
+    default: ''
+  password:
+    description: 'Password (on_prem only, when no api-key is given)'
+    required: false
+    default: ''
+  account-id:
+    description: 'Account ID (aws_cloud only)'
+    required: false
+    default: ''
+  iam-url:
+    description: 'Token endpoint override for cloud environments (e.g. https://iam.cloud.ibm.com/identity/token). When empty, ibm_cloud uses the IBM Cloud test IAM endpoint and other cloud types use the SDK default. Ignored for on_prem.'
+    required: false
+    default: ''
+  pr-number:
+    description: 'Pull request number to comment on'
+    required: true
+  repository:
+    description: 'Repository in owner/repo format'
+    required: true
+  github-token:
+    description: 'GitHub token for posting PR comments'
+    required: true
+
+outputs:
+  overall:
+    description: '0 = all tests passed, 1 = one or more failures'
+    value: ${{ steps.test.outputs.overall }}
+  body:
+    description: 'Markdown summary of test results'
+    value: ${{ steps.test.outputs.body }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install data-intelligence-sdk
+      shell: bash
+      run: |
+        # Self-hosted runner: use local Python 3.12 (3.15 has no google-re2 wheel)
+        python3.12 -m venv "$RUNNER_TEMP/venv"
+        echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+        "$RUNNER_TEMP/venv/bin/pip" install "data-intelligence-sdk==2.3.0"
+
+    - name: Trigger and poll test runs
+      id: test
+      shell: bash
+      env:
+        PLATFORM_URL:        ${{ inputs.url }}
+        PLATFORM_ENV:        ${{ inputs.environment }}
+        PLATFORM_API_KEY:    ${{ inputs.api-key }}
+        PLATFORM_USERNAME:   ${{ inputs.username }}
+        PLATFORM_PASSWORD:   ${{ inputs.password }}
+        PLATFORM_ACCOUNT_ID: ${{ inputs.account-id }}
+        IAM_TOKEN_URL:       ${{ inputs.iam-url }}
+        RESULTS_DIR:         ${{ github.workspace }}/test-results
+      run: |
+        python3 ${{ github.action_path }}/../../scripts/test_contract.py \
+          ${{ inputs.contract-ids }}
+
+    - name: Upload test result JSON
+      id: upload
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: data-contract-test-results-pr-${{ inputs.pr-number }}
+        path: ${{ github.workspace }}/test-results/*.json
+        if-no-files-found: ignore
+        overwrite: true
+
+    - name: Post PR comment (success)
+      if: success()
+      shell: bash
+      env:
+        GH_TOKEN:     ${{ inputs.github-token }}
+        BODY:         ${{ steps.test.outputs.body }}
+        ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+      run: |
+        printf "%b" "$BODY" > /tmp/pr_body.md
+        if [ -n "$ARTIFACT_URL" ]; then
+          printf '\n📎 [Download test result JSON](%s)\n' "$ARTIFACT_URL" >> /tmp/pr_body.md
+        fi
+        gh pr comment "${{ inputs.pr-number }}" \
+          --body-file /tmp/pr_body.md \
+          --repo "${{ inputs.repository }}"
+
+    - name: Post PR comment (failure)
+      if: failure()
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        cat > /tmp/pr_body.md <<'MDEOF'
+        ## ❌ Data Contract Test — failed
+
+        ```
+        See the workflow logs for the full error output.
+        ```
+        MDEOF
+        gh pr comment "${{ inputs.pr-number }}" \
+          --body-file /tmp/pr_body.md \
+          --repo "${{ inputs.repository }}"
+
+    - name: Fail if test failed
+      if: steps.test.outputs.overall == '1'
+      shell: bash
+      run: exit 1

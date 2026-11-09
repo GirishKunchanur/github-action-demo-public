@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+"""
+Save the PR test results against the real data contracts created on merge.
+
+For each <project_id>:<contract_id> pair emitted by create_contract.py
+(--mode merge), looks up the contract's canonical name, finds the matching
+test-result_<name>.json produced by test_contract.py during the PR, and
+stores it with POST /data_quality/v4/projects/{project_id}/data_contracts/{id}/test_results.
+
+Usage:
+    python save_test_results.py --results-dir <dir> <project_id:contract_id> [...]
+
+Environment variables:
+    PLATFORM_URL        - (required) Base URL of the instance (e.g. https://api.dai.dev.cloud.ibm.com)
+    PLATFORM_ENV        - ibm_cloud (default) | aws_cloud | gov_cloud | on_prem
+    PLATFORM_API_KEY    - API key (cloud); optional for on_prem when username/password is used
+    PLATFORM_USERNAME   - on_prem only
+    PLATFORM_PASSWORD   - on_prem only, when no API key is given
+    PLATFORM_ACCOUNT_ID - aws_cloud only
+    IAM_TOKEN_URL       - optional token endpoint override (cloud environments)
+A fresh bearer token is obtained at runtime via wxdi.common.auth.
+
+Exit codes:
+    0 - all available results saved (contracts without a saved result are skipped)
+    1 - one or more results failed to save
+
+Writes GITHUB_OUTPUT:
+    body - Markdown table (contract, contract id, test result id, status) used
+           for the comment posted on the merged PR
+"""
+
+import argparse
+import importlib.util
+import json
+import os
+import sys
+
+import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+from wxdi.data_contracts import DataContractsProvider
+from wxdi.data_contracts.models import DataContractTestResultPrototype
+from wxdi.dq_validator.provider.config import ProviderConfig
+
+# Load contract_utils from the same directory as this script
+_utils_path = os.path.join(os.path.dirname(__file__), "contract_utils.py")
+_spec = importlib.util.spec_from_file_location("contract_utils", _utils_path)
+_mod  = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_mod)
+get_bearer_token = _mod.get_bearer_token
+
+
+def write_body(rows: list) -> None:
+    """Write the Markdown summary table to GITHUB_OUTPUT as `body`."""
+    github_output = os.environ.get("GITHUB_OUTPUT", "")
+    if not github_output or not rows:
+        return
+    lines = [
+        "### 🧪 Test results saved to contracts",
+        "",
+        "| Contract | Contract ID | Test result ID | Status |",
+        "| --- | --- | --- | --- |",
+    ]
+    lines += [f"| `{n}` | `{c}` | {t} | {s} |" for n, c, t, s in rows]
+    with open(github_output, "a") as out:
+        out.write("body<<EOF\n")
+        out.write("\n".join(lines) + "\n")
+        out.write("EOF\n")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--results-dir", required=True)
+    parser.add_argument("entries", nargs="*")
+    args = parser.parse_args()
+
+    if not args.entries:
+        print("No contract IDs provided — nothing to save.")
+        return 0
+
+    cpd_url = os.environ.get("PLATFORM_URL", "").rstrip("/")
+
+    bearer   = get_bearer_token()
+    config   = ProviderConfig(url=cpd_url, auth_token=bearer)
+    provider = DataContractsProvider(config)
+
+    overall = 0
+    rows = []  # (contract name, contract id, test result id, status)
+    for entry in args.entries:
+        if ":" not in entry:
+            print(f"ERROR: entry '{entry}' is not in project_id:contract_id format.",
+                  file=sys.stderr)
+            overall = 1
+            continue
+
+        # "catalog:<catalog_id>:<contract_id>" for DPH catalog contracts
+        is_catalog = entry.startswith("catalog:")
+        if is_catalog:
+            entry = entry[len("catalog:"):]
+            if ":" not in entry:
+                print(f"ERROR: entry 'catalog:{entry}' is not in catalog:catalog_id:contract_id format.",
+                      file=sys.stderr)
+                overall = 1
+                continue
+        container_id, cid = entry.split(":", 1)
+
+        get_contract = (provider.get_catalog_data_contract if is_catalog
+                        else provider.get_project_data_contract)
+        create_result = (provider.create_catalog_data_contract_test_result if is_catalog
+                         else provider.create_project_data_contract_test_result)
+
+        try:
+            name = get_contract(container_id, cid).name
+        except ValueError as exc:
+            print(f"ERROR: could not look up contract {cid}: {exc}", file=sys.stderr)
+            rows.append((cid, cid, "—", "❌ contract lookup failed"))
+            overall = 1
+            continue
+
+        path = os.path.join(args.results_dir, f"test-result_{name}.json")
+        if not os.path.isfile(path):
+            print(f"SKIP  {name} ({cid}): no saved test result at {path}")
+            rows.append((name, cid, "—", "No test result from PR"))
+            continue
+
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+
+        # id / href are generated by the server for the new test result.
+        data.pop("id", None)
+        data.pop("href", None)
+
+        try:
+            created = create_result(
+                container_id, cid, DataContractTestResultPrototype(**data)
+            )
+            print(f"Saved  {name} ({cid}): test result id={created.id} status={created.status}")
+            rows.append((name, cid, f"`{created.id}`", created.status))
+        except ValueError as exc:
+            print(f"ERROR: could not save test result for {name} ({cid}): {exc}",
+                  file=sys.stderr)
+            rows.append((name, cid, "—", "❌ failed to save"))
+            overall = 1
+
+    write_body(rows)
+    return overall
+
+
+if __name__ == "__main__":
+    sys.exit(main())
