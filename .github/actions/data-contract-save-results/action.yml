@@ -80,6 +80,11 @@ runs:
         unzip -o -q "$RUNNER_TEMP/test-results.zip" -d "$RUNNER_TEMP/test-results"
         echo "found=true" >> "$GITHUB_OUTPUT"
 
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
     - name: Install data-intelligence-sdk
       if: steps.download.outputs.found == 'true'
       shell: bash
