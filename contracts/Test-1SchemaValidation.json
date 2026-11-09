@@ -1,0 +1,81 @@
+{
+  "version": "1.0.0",
+  "apiVersion": "v3.1.0",
+  "kind": "DataContract",
+  "id": "qa-rr-001",
+  "name": "QA_RR_002",
+  "status": "active",
+  "tenant": "banking_department",
+  "servers": [
+    {
+      "server": "banking-db",
+      "type": "db2",
+      "description": "DB2 production database for client accounts",
+      "environment": "prod",
+      "host": "150.240.238.240",
+      "port": 50000,
+      "database": "BANK",
+      "schema": "TESTUSER1",
+      "customProperties": [
+        { "property": "database", "value": "BANK" },
+        { "property": "schema", "value": "TESTUSER1" }
+      ]
+    }
+  ],
+  "dataProduct": "BankingDataProduct",
+  "schema": [
+    {
+      "name": "TEST_DROP_TABLE",
+      "physicalName": "TESTUSER1/TEST_DROP_TABLE",
+      "physicalType": "table",
+      "logicalType": "object",
+      "quality": [
+        {
+          "id": "id-t1",
+          "name": "t1",
+          "type": "sql",
+          "query": "SELECT * FROM TESTUSER1.TEST_DROP_TABLE;",
+          "mustBe": 2,
+          "dimension": "completeness"
+        }
+      ],
+      "properties": [
+        { "name": "ID", "physicalName": "ID", "logicalType": "integer",
+          "primaryKey": true, "unique": true, "required": true },
+        { "name": "NAME", "physicalName": "NAME", "logicalType": "string",
+          "primaryKey": false, "unique": false, "required": true },
+        {
+          "name": "BALANCE",
+          "physicalName": "BALANCE",
+          "physicalType": "decimal",
+          "logicalType": "number",
+          "quality": [
+            {
+              "id": "id-c1",
+              "name": "c1",
+              "type": "sql",
+              "query": "SELECT * FROM TESTUSER1.TEST_DROP_TABLE WHERE BALANCE IS NOT NULL;",
+              "dimension": "accuracy",
+              "mustBeGreaterThan": 1
+            },
+            {
+              "id": "id-c2",
+              "name": "c2",
+              "type": "library",
+              "metric": "missingValues",
+              "arguments": { "missingValues": ["", "n/a", "N/A", "null", "NULL"] },
+              "mustBeLessThan": 5
+            }
+          ],
+          "primaryKey": false,
+          "unique": false,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "customProperties": [
+    { "property": "connectionIds", "value": ["01a1bfaa-854b-770b-89e7-3325dba69d5e"] },
+    { "property": "projectId", "value": "439b5c3c-9d4c-472e-8ebc-2c921a4d32c1" }
+  ]
+}
