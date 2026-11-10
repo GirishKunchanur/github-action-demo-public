@@ -3,7 +3,7 @@
   "apiVersion": "v3.1.0",
   "kind": "DataContract",
   "id": "Bank_contract_002",
-  "name": "BANK_customer_quality_contract_002",
+  "name": "BANK_customer_quality_contract_003",
   "status": "active",
   "tenant": "banking_department",
   "servers": [
