@@ -1,0 +1,618 @@
+{
+  "version": "1.0.0",
+  "apiVersion": "v3.1.0",
+  "kind": "DataContract",
+  "id": "Bank_contract_002",
+  "name": "BANK_customer_quality_contract_002",
+  "status": "active",
+  "tenant": "banking_department",
+  "servers": [
+    {
+      "server": "banking-db",
+      "type": "db2",
+      "description": "DB2 production database for client accounts",
+      "environment": "prod",
+      "host": "150.240.238.240",
+      "port": 50000,
+      "database": "BANK",
+      "schema": "BANK1",
+      "customProperties": [
+        {
+          "property": "database",
+          "value": "BANK"
+        },
+        {
+          "property": "schema",
+          "value": "BANK1"
+        }
+      ]
+    },
+    {
+      "server": "AmazonRDS",
+      "type": "db2",
+      "description": "Amazon production database for client accounts",
+      "environment": "prod",
+      "host": "conops-rds-oracle-1.csf2wqyc27ft.us-east-1.rds.amazonaws.com",
+      "port": 50000,
+      "database": "DATABASE",
+      "schema": "TM_IKC_MDI",
+      "customProperties": [
+        {
+          "property": "database",
+          "value": "DATABASE"
+        },
+        {
+          "property": "schema",
+          "value": "TM_IKC_MDI"
+        }
+      ]
+    }
+  ],
+  "dataProduct": "BankingDataProduct",
+  "schema": [
+    {
+      "name": "BANK_CLIENTS",
+      "physicalName": "BANK1/BANK_CLIENTS",
+      "physicalType": "table",
+      "logicalType": "object",
+      "quality": [
+        {
+          "name": "table_row_counts",
+          "type": "sql",
+          "query": "SELECT * FROM BANK1.BANK_CLIENTS;",
+          "mustBeGreaterThan": 1000,
+          "dimension": "completeness"
+        },
+        {
+          "name": "Senior clients with young marital status mismatch",
+          "type": "sql",
+          "query": "SELECT AGE, MARITAL_STATUS FROM BANK1.BANK_CLIENTS WHERE AGE > 90 AND MARITAL_STATUS = 'single';",
+          "mustBeLessThan": 50
+        },
+        {
+          "name": "Clients with missing phone number",
+          "type": "sql",
+          "query": "SELECT * FROM BANK1.BANK_CLIENTS WHERE PHONE1 IS NULL;",
+          "dimension": "completeness",
+          "mustBeLessThan": 4000
+        }
+      ],
+      "properties": [
+        {
+          "name": "ACCOUNT_ID",
+          "physicalName": "ACCOUNT_ID",
+          "logicalType": "integer",
+          "quality": [
+            {
+              "name": "Null Values Check for ACCOUNT_ID",
+              "type": "sql",
+              "query": "SELECT * FROM BANK1.BANK_CLIENTS WHERE ACCOUNT_ID IS NULL;",
+              "dimension": "accuracy",
+              "mustBeLessThan": 10
+            },
+            {
+              "name": "Missing Values for Account IDs",
+              "type": "library",
+              "metric": "missingValues",
+              "arguments": {
+                "missingValues": [
+                  "",
+                  "n/a",
+                  "N/A",
+                  "none",
+                  "NONE"
+                ]
+              },
+              "mustBeLessThan": 10
+            },
+            {
+              "name": "Duplicate account IDs via library check",
+              "type": "library",
+              "metric": "duplicateValues",
+              "mustBeLessThan": 100
+            }
+          ],
+          "primaryKey": false,
+          "unique": true,
+          "required": true
+        },
+        {
+          "name": "ZIP",
+          "physicalName": "ZIP",
+          "logicalType": "string",
+          "quality": [
+            {
+              "name": "Invalid ZIP format",
+              "type": "sql",
+              "query": "SELECT ZIP FROM BANK1.BANK_CLIENTS WHERE ZIP IS NOT NULL AND NOT REGEXP_LIKE(TRIM(ZIP),'^[0-9]{5}$');",
+              "mustBeLessThan": 4000
+            },
+            {
+              "name": "Invalid ZIP format via Library check",
+              "type": "library",
+              "metric": "invalidValues",
+              "arguments": {
+                "pattern": "^[0-9]{5}$"
+              },
+              "mustBeLessThan": 4000
+            }
+          ],
+          "primaryKey": false,
+          "unique": true,
+          "required": true
+        },
+        {
+          "name": "AGE",
+          "physicalName": "AGE",
+          "logicalType": "number",
+          "quality": [
+            {
+              "name": "Underage or very old customers",
+              "type": "sql",
+              "query": "SELECT AGE FROM BANK1.BANK_CLIENTS WHERE AGE IS NULL OR AGE < 21 OR AGE > 90;",
+              "mustBeBetween": [
+                0,
+                1000
+              ]
+            }
+          ],
+          "primaryKey": false,
+          "unique": true,
+          "required": true
+        },
+        {
+          "name": "EMAIL",
+          "physicalName": "EMAIL",
+          "logicalType": "string",
+          "quality": [
+            {
+              "name": "Email missing @ symbol",
+              "type": "sql",
+              "query": "SELECT EMAIL FROM BANK1.BANK_CLIENTS WHERE EMAIL IS NOT NULL AND EMAIL NOT LIKE '%@%';",
+              "mustBeLessThan": 10
+            }
+          ],
+          "primaryKey": false,
+          "unique": true,
+          "required": true
+        },
+        {
+          "name": "GENDER",
+          "physicalName": "GENDER",
+          "logicalType": "string",
+          "quality": [
+            {
+              "name": "Unexpected gender codes",
+              "type": "sql",
+              "query": "SELECT GENDER FROM BANK1.BANK_CLIENTS WHERE GENDER NOT IN ('M','F');",
+              "mustBeLessThan": 5200
+            },
+            {
+              "name": "Unexpected gender codes via library check",
+              "type": "library",
+              "metric": "invalidValues",
+              "arguments": {
+                "validValues": [
+                  "M",
+                  "F"
+                ]
+              },
+              "mustBeLessThan": 5200
+            }
+          ],
+          "primaryKey": false,
+          "unique": true,
+          "required": true
+        },
+        {
+          "name": "MARITAL_STATUS",
+          "physicalName": "MARITAL_STATUS",
+          "logicalType": "string",
+          "quality": [
+            {
+              "name": "Invalid marital status codes",
+              "type": "sql",
+              "query": "SELECT MARITAL_STATUS FROM BANK1.BANK_CLIENTS WHERE MARITAL_STATUS NOT IN ('single','married','divorced','widowed','unknown');",
+              "mustBeBetween": [
+                0,
+                5200
+              ]
+            }
+          ],
+          "primaryKey": false,
+          "unique": true,
+          "required": true
+        },
+        {
+          "name": "CLIENT_ID",
+          "physicalName": "CLIENT_ID",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "NAME",
+          "physicalName": "NAME",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "ADDRESS",
+          "physicalName": "ADDRESS",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "PROFESSION",
+          "physicalName": "PROFESSION",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "NBR_YEARS_CLI",
+          "physicalName": "NBR_YEARS_CLI",
+          "logicalType": "number",
+          "required": false
+        },
+        {
+          "name": "SAVINGS_ACCOUNT",
+          "physicalName": "SAVINGS_ACCOUNT",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "ONLINE_ACCESS",
+          "physicalName": "ONLINE_ACCESS",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "JOINED_ACCOUNTS",
+          "physicalName": "JOINED_ACCOUNTS",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "BANKCARD",
+          "physicalName": "BANKCARD",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "AVERAGE_BALANCE",
+          "physicalName": "AVERAGE_BALANCE",
+          "logicalType": "number",
+          "required": false
+        },
+        {
+          "name": "ACCOUNT_TYPE",
+          "physicalName": "ACCOUNT_TYPE",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "CCN",
+          "physicalName": "CCN",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "PHONE1",
+          "physicalName": "PHONE1",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "PHONE2",
+          "physicalName": "PHONE2",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "CC",
+          "physicalName": "CC",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "CONTACT",
+          "physicalName": "CONTACT",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "RTN",
+          "physicalName": "RTN",
+          "logicalType": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "SCALAR_FUNCTIONS_DB2",
+      "physicalName": "TM_IKC_MDI/SCALAR_FUNCTIONS_DB2",
+      "physicalType": "table",
+      "logicalType": "object",
+      "quality": [
+        {
+          "name": "table_row_count",
+          "type": "sql",
+          "query": "SELECT * FROM TM_IKC_MDI.SCALAR_FUNCTIONS_DB2;",
+          "mustBeGreaterThan": 0,
+          "dimension": "completeness"
+        }
+      ],
+      "properties": [
+        {
+          "name": "VARCHAR_LCASE",
+          "physicalName": "VARCHAR_LCASE",
+          "logicalType": "string",
+          "quality": [
+            {
+              "name": "Non-null VARCHAR_LCASE rows",
+              "type": "sql",
+              "query": "SELECT * FROM TM_IKC_MDI.SCALAR_FUNCTIONS_DB2 where INT_BASE>-7 and VARCHAR_LCASE IS NOT NULL and INT_SUM=-25;",
+              "dimension": "accuracy",
+              "mustBeGreaterThan": 1
+            }
+          ],
+          "primaryKey": false,
+          "unique": true,
+          "required": true
+        },
+        {
+          "name": "INT_BASE",
+          "physicalName": "INT_BASE",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "INT_SUM",
+          "physicalName": "INT_SUM",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "VARCHAR_UCASE",
+          "physicalName": "VARCHAR_UCASE",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "DECIMAL_MINMAX",
+          "physicalName": "DECIMAL_MINMAX",
+          "logicalType": "number",
+          "required": false
+        },
+        {
+          "name": "DATETIME_BASE",
+          "physicalName": "DATETIME_BASE",
+          "logicalType": "timestamp",
+          "required": false
+        },
+        {
+          "name": "DATE_BASE",
+          "physicalName": "DATE_BASE",
+          "logicalType": "timestamp",
+          "required": false
+        },
+        {
+          "name": "DECIMAL_BASE",
+          "physicalName": "DECIMAL_BASE",
+          "logicalType": "number",
+          "required": false
+        },
+        {
+          "name": "VARCHAR_DATE",
+          "physicalName": "VARCHAR_DATE",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "TIME_BASE2",
+          "physicalName": "TIME_BASE2",
+          "logicalType": "timestamp",
+          "required": false
+        },
+        {
+          "name": "VARCHAR_TIME",
+          "physicalName": "VARCHAR_TIME",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "VARCHAR_DATETIME",
+          "physicalName": "VARCHAR_DATETIME",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "FLOAT_BASE",
+          "physicalName": "FLOAT_BASE",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "FLOAT_EXP",
+          "physicalName": "FLOAT_EXP",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "VARCHAR_INT",
+          "physicalName": "VARCHAR_INT",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "INT_SQUARE",
+          "physicalName": "INT_SQUARE",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "INT_ABS",
+          "physicalName": "INT_ABS",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "INT_COUNT",
+          "physicalName": "INT_COUNT",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "DECIMAL_AVG",
+          "physicalName": "DECIMAL_AVG",
+          "logicalType": "number",
+          "required": false
+        },
+        {
+          "name": "FLOAT_AVG",
+          "physicalName": "FLOAT_AVG",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "VARCHAR10_SPACES",
+          "physicalName": "VARCHAR10_SPACES",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "CHAR10_SPACES",
+          "physicalName": "CHAR10_SPACES",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "CHAR_BASE",
+          "physicalName": "CHAR_BASE",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "CHAR_ASCII",
+          "physicalName": "CHAR_ASCII",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "SALARY",
+          "physicalName": "SALARY",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "FIRST_NAME",
+          "physicalName": "FIRST_NAME",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "LAST_NAME",
+          "physicalName": "LAST_NAME",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "PASSWORD",
+          "physicalName": "PASSWORD",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "VARCHAR_OLD",
+          "physicalName": "VARCHAR_OLD",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "VARCHAR_NEW",
+          "physicalName": "VARCHAR_NEW",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "VARCHAR_LEFT",
+          "physicalName": "VARCHAR_LEFT",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "VARCHAR_RIGHT",
+          "physicalName": "VARCHAR_RIGHT",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "VARCHAR_REPLACED",
+          "physicalName": "VARCHAR_REPLACED",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "INT_VARCHAR_LEN",
+          "physicalName": "INT_VARCHAR_LEN",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "VARCHAR_REPEAT_3",
+          "physicalName": "VARCHAR_REPEAT_3",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "VARCHAR_SUBSTRING",
+          "physicalName": "VARCHAR_SUBSTRING",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "TIME_BASE",
+          "physicalName": "TIME_BASE",
+          "logicalType": "timestamp",
+          "required": false
+        },
+        {
+          "name": "VARCHAR_BASE",
+          "physicalName": "VARCHAR_BASE",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "VARCHAR_LEN",
+          "physicalName": "VARCHAR_LEN",
+          "logicalType": "string",
+          "required": false
+        },
+        {
+          "name": "DATE_BASE2",
+          "physicalName": "DATE_BASE2",
+          "logicalType": "timestamp",
+          "required": false
+        },
+        {
+          "name": "DATETIME_BASE2",
+          "physicalName": "DATETIME_BASE2",
+          "logicalType": "timestamp",
+          "required": false
+        }
+      ]
+    }
+  ],
+  "customProperties": [
+    {
+      "property": "connectionIds",
+      "value": [
+        "01a1c5a4-dec8-7281-b89c-646e243c097e",
+        "01a1c5a6-d6dc-7450-a9bb-d000574bfcc1"
+      ]
+    },
+    {
+      "property": "projectId",
+      "value": "25f3d9cc-0852-4029-8767-84c0ab0404ea"
+    }
+  ]
+}
