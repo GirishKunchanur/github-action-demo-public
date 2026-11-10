@@ -3,7 +3,7 @@
   "apiVersion": "v3.1.0",
   "kind": "DataContract",
   "id": "Bank_contract_002",
-  "name": "BANK_customer_quality_contract_004",
+  "name": "BANK_customer_quality_contract_002",
   "status": "active",
   "tenant": "banking_department",
   "servers": [
@@ -606,13 +606,13 @@
     {
       "property": "connectionIds",
       "value": [
-        "01a1c5a4-dec8-7281-b89c-646e243c097e",
-        "01a1c5a6-d6dc-7450-a9bb-d000574bfcc1"
+        "01a1c66c-ff19-75ff-8dec-245cec85d24a",
+        "01a1c664-ee46-70dc-9ab4-f22baf8b4cb4"
       ]
     },
     {
       "property": "projectId",
-      "value": "25f3d9cc-0852-4029-8767-84c0ab0404ea"
+      "value": "0b12a728-5f6a-4b9d-b142-7c11b265bef6"
     }
   ]
 }
